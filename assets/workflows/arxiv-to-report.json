@@ -1,0 +1,125 @@
+{
+  "name": "arxiv-to-report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "triggerAtHour": 8, "triggerAtMinute": 5 }] }
+      },
+      "id": "node-schedule",
+      "name": "Schedule (08:05)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "command": "cat /tmp/arxiv_latest.json 2>/dev/null | head -c 8000 || echo '[]'"
+      },
+      "id": "node-read-arxiv",
+      "name": "arXiv 캐시 읽기",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.stdout || '[]';\nlet papers;\ntry { papers = JSON.parse(raw); } catch(e) { papers = []; }\n\nif (papers.length === 0) {\n  return [{ json: { skip: true, reason: 'arXiv 데이터 없음' } }];\n}\n\nconst date = new Date().toISOString().slice(0,10).replace(/-/g,'');\nconst reportPath = `{{ $env.INSTALL_DIR }}/reports/papers_${date}.pdf`;\nconst paperList = papers.slice(0, 10).map((p, i) =>\n  `${i+1}. ${p.title}\\n   저자: ${(p.authors||[]).slice(0,3).join(', ')}\\n   링크: ${p.url||''}`\n).join('\\n\\n');\n\nconst prompt = `오늘(${date}) 수집된 arXiv 논문 목록을 한국어로 요약한 PDF 리포트를 생성해줘.\\n\\n논문 목록 (${papers.length}편):\\n${paperList}\\n\\n각 논문에 대해:\\n- 제목 (한국어 번역)\\n- 저자\\n- 핵심 기여 (2~3문장 한국어 요약)\\n- 연구소 적용 가능성 (ESP32/STM32/Zephyr/cFS 관련성)\\n\\n출력 경로: ${reportPath}\\nreportlab으로 PDF를 생성하고 완료 후 '논문 리포트 생성 완료: ${reportPath}' 라고 응답해줘.`;\n\nreturn [{ json: { papers, reportPath, date, paperCount: papers.length, prompt, skip: false } }];"
+      },
+      "id": "node-prepare-prompt",
+      "name": "논문 요약 요청 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "check-skip",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ]
+        }
+      },
+      "id": "node-check-data",
+      "name": "데이터 있음?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8080/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Authorization", "value": "Bearer dummy" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"reporter\",\n  \"messages\": [{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}],\n  \"stream\": false\n}",
+        "options": { "timeout": 600000 }
+      },
+      "id": "node-call-reporter",
+      "name": "@reporter 논문 요약 요청",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1080, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "📚 *arXiv 논문 요약 리포트*\n\n오늘 수집: {{ $('논문 요약 요청 준비').item.json.paperCount }}편\n📄 리포트: `{{ $('논문 요약 요청 준비').item.json.reportPath }}`\n\n{{ $json.choices[0].message.content.substring(0, 800) }}",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "node-telegram-report",
+      "name": "Telegram 논문 요약 전송",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1300, 200],
+      "credentials": { "telegramApi": { "id": "telegram-cred", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "ℹ️ arXiv 리포트 스킵 — 오늘 수집된 논문 없음",
+        "additionalFields": {}
+      },
+      "id": "node-telegram-skip",
+      "name": "Telegram 스킵 알림",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1080, 400],
+      "credentials": { "telegramApi": { "id": "telegram-cred", "name": "Telegram Bot" } }
+    }
+  ],
+  "connections": {
+    "Schedule (08:05)": {
+      "main": [[{ "node": "arXiv 캐시 읽기", "type": "main", "index": 0 }]]
+    },
+    "arXiv 캐시 읽기": {
+      "main": [[{ "node": "논문 요약 요청 준비", "type": "main", "index": 0 }]]
+    },
+    "논문 요약 요청 준비": {
+      "main": [[{ "node": "데이터 있음?", "type": "main", "index": 0 }]]
+    },
+    "데이터 있음?": {
+      "main": [
+        [{ "node": "Telegram 스킵 알림", "type": "main", "index": 0 }],
+        [{ "node": "@reporter 논문 요약 요청", "type": "main", "index": 0 }]
+      ]
+    },
+    "@reporter 논문 요약 요청": {
+      "main": [[{ "node": "Telegram 논문 요약 전송", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "embedded-lab" }, { "name": "arxiv" }, { "name": "report" }]
+}

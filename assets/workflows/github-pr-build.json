@@ -1,0 +1,229 @@
+{
+  "name": "github-pr-build",
+  "nodes": [
+    {
+      "parameters": {
+        "events": ["pull_request"],
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "authentication": "oAuth2"
+      },
+      "id": "node-github-trigger",
+      "name": "GitHub PR Trigger",
+      "type": "n8n-nodes-base.githubTrigger",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "credentials": { "githubOAuth2Api": { "id": "github-cred", "name": "GitHub OAuth2" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "check-merged",
+              "leftValue": "={{ $json.body.action }}",
+              "rightValue": "closed",
+              "operator": { "type": "string", "operation": "equals" }
+            },
+            {
+              "id": "check-merged-flag",
+              "leftValue": "={{ $json.body.pull_request.merged }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "node-check-merged",
+      "name": "PR 머지 여부 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "pr_number", "value": "={{ $json.body.pull_request.number }}" },
+            { "name": "branch",    "value": "={{ $json.body.pull_request.head.ref }}" },
+            { "name": "author",    "value": "={{ $json.body.pull_request.user.login }}" },
+            { "name": "title",     "value": "={{ $json.body.pull_request.title }}" }
+          ]
+        }
+      },
+      "id": "node-set-pr-info",
+      "name": "PR 정보 추출",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [640, 200]
+    },
+    {
+      "parameters": {
+        "command": "bash {{ $env.INSTALL_DIR }}/gates/gate_runner.sh {{ $env.PROJECT_PATH }} {{ $env.BOARD_TYPE }} 2>&1; echo \"EXIT:$?\""
+      },
+      "id": "node-run-gates",
+      "name": "Gate Runner 실행",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [860, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = $input.first().json.stdout || '';\nconst exitMatch = output.match(/EXIT:(\\d+)/);\nconst exitCode = exitMatch ? parseInt(exitMatch[1]) : 99;\n\nlet failedGate = 0;\nif (exitCode >= 1 && exitCode <= 4) failedGate = exitCode;\n\nreturn [{ json: { exitCode, failedGate, output, success: exitCode === 0 } }];"
+      },
+      "id": "node-parse-result",
+      "name": "Gate 결과 파싱",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "check-success",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ]
+        }
+      },
+      "id": "node-check-success",
+      "name": "성공 여부 분기",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1300, 200]
+    },
+    {
+      "parameters": {
+        "command": "cd {{ $env.PROJECT_PATH }} && git tag -f \"pr-{{ $('PR 정보 추출').item.json.pr_number }}-passed\" -m \"PR #{{ $('PR 정보 추출').item.json.pr_number }} passed all gates\" 2>&1"
+      },
+      "id": "node-git-tag",
+      "name": "Git 태그 생성",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1520, 100]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "release",
+        "operation": "create",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "tag": "pr-{{ $('PR 정보 추출').item.json.pr_number }}-passed",
+        "name": "PR #{{ $('PR 정보 추출').item.json.pr_number }} — Gate All Pass",
+        "body": "모든 Gate 통과 ✅\n\nPR: #{{ $('PR 정보 추출').item.json.pr_number }}\n브랜치: {{ $('PR 정보 추출').item.json.branch }}\n작성자: {{ $('PR 정보 추출').item.json.author }}"
+      },
+      "id": "node-create-release",
+      "name": "GitHub Release 생성",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [1740, 100],
+      "credentials": { "githubOAuth2Api": { "id": "github-cred", "name": "GitHub OAuth2" } }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "✅ *PR 빌드 성공*\n\nPR: #{{ $('PR 정보 추출').item.json.pr_number }} — {{ $('PR 정보 추출').item.json.title }}\n브랜치: `{{ $('PR 정보 추출').item.json.branch }}`\n작성자: {{ $('PR 정보 추출').item.json.author }}\n\n모든 Gate 통과 — 병합 완료 ✅",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "node-telegram-success",
+      "name": "Telegram 성공 알림",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1960, 100],
+      "credentials": { "telegramApi": { "id": "telegram-cred", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const gate = $input.first().json.failedGate;\nconst output = $input.first().json.output;\nconst errorLines = output.split('\\n').filter(l => /error:|Error:|FAIL|undefined reference/.test(l)).slice(0, 10).join('\\n');\n\nlet agent, prompt;\nif (gate === 2) {\n  agent = 'misra-agent';\n  prompt = `PR 빌드에서 Gate 2 (Static Analysis) 실패.\\n\\n에러 로그:\\n\\`\\`\\`\\n${errorLines}\\n\\`\\`\\`\\n\\n위반 항목을 분류하고 처리해줘.`;\n} else {\n  agent = 'developer';\n  prompt = `PR 빌드에서 Gate ${gate} 실패.\\n프로젝트: {{ $env.PROJECT_PATH }}\\n타겟: {{ $env.BOARD_TYPE }}\\n\\n에러 로그:\\n\\`\\`\\`\\n${errorLines}\\n\\`\\`\\`\\n\\n수정해줘.`;\n}\n\nreturn [{ json: { agent, prompt, gate } }];"
+      },
+      "id": "node-prepare-agent-call",
+      "name": "에이전트 호출 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1520, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8080/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Authorization", "value": "Bearer dummy" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $json.agent }}\",\n  \"messages\": [{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}],\n  \"stream\": false\n}",
+        "options": { "timeout": 300000 }
+      },
+      "id": "node-call-agent",
+      "name": "Nanobot 에이전트 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1740, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "❌ *PR 빌드 실패*\n\nPR: #{{ $('PR 정보 추출').item.json.pr_number }}\n실패 Gate: {{ $('에이전트 호출 준비').item.json.gate }}\n담당 에이전트: @{{ $('에이전트 호출 준비').item.json.agent }}\n\n*에이전트 응답:*\n{{ $json.choices[0].message.content.substring(0, 500) }}",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "node-telegram-fail",
+      "name": "Telegram 실패 알림",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1960, 300],
+      "credentials": { "telegramApi": { "id": "telegram-cred", "name": "Telegram Bot" } }
+    }
+  ],
+  "connections": {
+    "GitHub PR Trigger": {
+      "main": [[{ "node": "PR 머지 여부 확인", "type": "main", "index": 0 }]]
+    },
+    "PR 머지 여부 확인": {
+      "main": [
+        [{ "node": "PR 정보 추출", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "PR 정보 추출": {
+      "main": [[{ "node": "Gate Runner 실행", "type": "main", "index": 0 }]]
+    },
+    "Gate Runner 실행": {
+      "main": [[{ "node": "Gate 결과 파싱", "type": "main", "index": 0 }]]
+    },
+    "Gate 결과 파싱": {
+      "main": [[{ "node": "성공 여부 분기", "type": "main", "index": 0 }]]
+    },
+    "성공 여부 분기": {
+      "main": [
+        [{ "node": "Git 태그 생성", "type": "main", "index": 0 }],
+        [{ "node": "에이전트 호출 준비", "type": "main", "index": 0 }]
+      ]
+    },
+    "Git 태그 생성": {
+      "main": [[{ "node": "GitHub Release 생성", "type": "main", "index": 0 }]]
+    },
+    "GitHub Release 생성": {
+      "main": [[{ "node": "Telegram 성공 알림", "type": "main", "index": 0 }]]
+    },
+    "에이전트 호출 준비": {
+      "main": [[{ "node": "Nanobot 에이전트 호출", "type": "main", "index": 0 }]]
+    },
+    "Nanobot 에이전트 호출": {
+      "main": [[{ "node": "Telegram 실패 알림", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "embedded-lab" }, { "name": "ci-cd" }]
+}

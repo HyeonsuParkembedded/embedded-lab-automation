@@ -1,0 +1,121 @@
+{
+  "name": "nightly-report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "triggerAtHour": 1, "triggerAtMinute": 0 }] }
+      },
+      "id": "node-schedule",
+      "name": "Schedule (01:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "command": "cat /tmp/build_status.json 2>/dev/null || echo '{\"state\":\"unknown\",\"gate\":0,\"reason\":\"상태 파일 없음\",\"timestamp\":\"-\"}'"
+      },
+      "id": "node-read-status",
+      "name": "빌드 상태 읽기",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.stdout || '{}';\nlet status;\ntry { status = JSON.parse(raw); } catch(e) { status = { state: 'parse_error', gate: 0, reason: raw, timestamp: '-' }; }\n\nconst date = new Date().toISOString().slice(0,10).replace(/-/g,'');\nconst reportPath = `{{ $env.INSTALL_DIR }}/reports/build_${date}.pdf`;\nconst logPath = `/tmp/nightly_build_${date}.log`;\n\nconst prompt = `야간 빌드가 완료되었어. 다음 데이터를 바탕으로 빌드 리포트를 생성해줘.\\n\\n빌드 상태:\\n\\`\\`\\`json\\n${JSON.stringify(status, null, 2)}\\n\\`\\`\\`\\n\\n로그 파일: ${logPath}\\n출력 경로: ${reportPath}\\n\\nreportlab으로 PDF를 생성하고, 생성 완료 후 '리포트 생성 완료: ${reportPath}' 라고 응답해줘.`;\n\nreturn [{ json: { status, reportPath, logPath, date, prompt } }];"
+      },
+      "id": "node-prepare-report",
+      "name": "리포트 요청 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8080/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Authorization", "value": "Bearer dummy" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"reporter\",\n  \"messages\": [{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}],\n  \"stream\": false\n}",
+        "options": { "timeout": 300000 }
+      },
+      "id": "node-call-reporter",
+      "name": "@reporter 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst content = response?.choices?.[0]?.message?.content || '응답 없음';\nconst status = $('리포트 요청 준비').item.json.status;\nconst reportPath = $('리포트 요청 준비').item.json.reportPath;\n\nconst stateEmoji = status.state === 'completed' ? '✅' : '❌';\nconst summary = `${stateEmoji} *야간 빌드 리포트*\\n\\n상태: ${status.state?.toUpperCase()}\\n최종 Gate: ${status.gate}\\n시각: ${status.timestamp}\\n\\n📄 리포트: \\`${reportPath}\\``;\n\nreturn [{ json: { summary, content, reportPath } }];"
+      },
+      "id": "node-parse-response",
+      "name": "응답 파싱",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "release",
+        "operation": "create",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "tag": "nightly-{{ $('리포트 요청 준비').item.json.date }}",
+        "name": "Nightly Build {{ $('리포트 요청 준비').item.json.date }}",
+        "body": "={{ $json.content.substring(0, 1000) }}"
+      },
+      "id": "node-github-release",
+      "name": "GitHub Release 업로드",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [1300, 200],
+      "credentials": { "githubOAuth2Api": { "id": "github-cred", "name": "GitHub OAuth2" } }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $('응답 파싱').item.json.summary }}",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "node-telegram",
+      "name": "Telegram 리포트 알림",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1300, 400],
+      "credentials": { "telegramApi": { "id": "telegram-cred", "name": "Telegram Bot" } }
+    }
+  ],
+  "connections": {
+    "Schedule (01:00)": {
+      "main": [[{ "node": "빌드 상태 읽기", "type": "main", "index": 0 }]]
+    },
+    "빌드 상태 읽기": {
+      "main": [[{ "node": "리포트 요청 준비", "type": "main", "index": 0 }]]
+    },
+    "리포트 요청 준비": {
+      "main": [[{ "node": "@reporter 호출", "type": "main", "index": 0 }]]
+    },
+    "@reporter 호출": {
+      "main": [[{ "node": "응답 파싱", "type": "main", "index": 0 }]]
+    },
+    "응답 파싱": {
+      "main": [
+        [{ "node": "GitHub Release 업로드", "type": "main", "index": 0 }],
+        [{ "node": "Telegram 리포트 알림", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "embedded-lab" }, { "name": "report" }]
+}

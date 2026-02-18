@@ -1,0 +1,22 @@
+# Renode script for STM32F4 Discovery
+# 위치: ~/embedded-lab/sim/stm32f4_test.resc
+
+using sysbus
+$name?="STM32F4_Discovery"
+
+mach create $name
+machine LoadPlatformDescription @platforms/cpus/stm32f4.repl
+
+# UART 출력 캡처
+showAnalyzer sysbus.uart2
+
+# 바이너리 로드 (빌드 결과물 경로에 맞게 조정 필요)
+# sysbus LoadELF @path/to/your/binary.elf
+
+macro reset
+"""
+    sysbus ZeroRegistration
+    sysbus LoadELF @path/to/your/binary.elf
+"""
+
+runMacro $reset

@@ -1,0 +1,233 @@
+{
+  "name": "misra-escalation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "misra-escalation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook",
+      "name": "Webhook (nightly_build 호출)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "misra-escalation-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst errorLog   = body.error_log   || '에러 로그 없음';\nconst failReason = body.fail_reason || '원인 불명';\nconst project    = body.project     || '{{ $env.PROJECT_PATH }}';\nconst board      = body.board_type  || '{{ $env.BOARD_TYPE }}';\n\nconst prompt = `야간 빌드에서 Gate 2 (Static Analysis) 가 실패했어.\\n\\n실패 원인: ${failReason}\\n프로젝트: ${project}\\n\\ncppcheck 에러 로그:\\n\\`\\`\\`\\n${errorLog}\\n\\`\\`\\`\\n\\n다음 순서로 처리해줘:\\n1. 위반 항목을 Mandatory / Advisory / 거짓양성으로 분류\\n2. 실제 버그 가능성 항목은 @developer에게 수정 요청\\n3. 억제 가능한 항목은 정당화 주석 추가 후 억제\\n4. 처리 완료 후 결과 요약 보고`;\n\nreturn [{ json: { prompt, errorLog, failReason, project, board, attempt: 1 } }];"
+      },
+      "id": "node-prepare-misra",
+      "name": "MISRA 요청 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8080/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Authorization", "value": "Bearer dummy" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"misra-agent\",\n  \"messages\": [{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}],\n  \"stream\": false\n}",
+        "options": { "timeout": 300000 }
+      },
+      "id": "node-misra-attempt1",
+      "name": "@misra-agent 1차 시도",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst content = response?.choices?.[0]?.message?.content || '';\n\n// 수정/억제 완료 여부 판단\nconst resolved = /완료|PASS|통과|처리 완료|Gate 2.*pass/i.test(content);\n\nreturn [{ json: { content, resolved, attempt: 1 } }];"
+      },
+      "id": "node-check-attempt1",
+      "name": "1차 결과 확인",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "check-resolved",
+              "leftValue": "={{ $json.resolved }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ]
+        }
+      },
+      "id": "node-resolved1",
+      "name": "1차 해결?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1080, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8080/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Authorization", "value": "Bearer dummy" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"misra-agent\",\n  \"messages\": [\n    {\"role\": \"user\",      \"content\": \"{{ $('MISRA 요청 준비').item.json.prompt }}\"},\n    {\"role\": \"assistant\", \"content\": \"{{ $('1차 결과 확인').item.json.content }}\"},\n    {\"role\": \"user\",      \"content\": \"아직 Gate 2가 통과되지 않았어. 남은 위반 항목을 다시 분석해서 완전히 처리해줘. Gate 2 PASS 상태가 될 때까지 진행해줘.\"}\n  ],\n  \"stream\": false\n}",
+        "options": { "timeout": 300000 }
+      },
+      "id": "node-misra-attempt2",
+      "name": "@misra-agent 2차 시도",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1300, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst content = response?.choices?.[0]?.message?.content || '';\nconst resolved = /완료|PASS|통과|처리 완료|Gate 2.*pass/i.test(content);\nreturn [{ json: { content, resolved, attempt: 2 } }];"
+      },
+      "id": "node-check-attempt2",
+      "name": "2차 결과 확인",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1520, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "check-resolved2",
+              "leftValue": "={{ $json.resolved }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ]
+        }
+      },
+      "id": "node-resolved2",
+      "name": "2차 해결?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1740, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8080/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Authorization", "value": "Bearer dummy" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"architect\",\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"@misra-agent가 Gate 2 실패를 2회 시도했지만 해결하지 못했어.\\n\\n프로젝트: {{ $('MISRA 요청 준비').item.json.project }}\\n\\n1차 시도 결과:\\n{{ $('1차 결과 확인').item.json.content.substring(0,500) }}\\n\\n2차 시도 결과:\\n{{ $('2차 결과 확인').item.json.content.substring(0,500) }}\\n\\n원본 에러:\\n{{ $('MISRA 요청 준비').item.json.errorLog.substring(0,500) }}\\n\\n근본 원인을 분석하고 해결 방향을 제시해줘. 필요하면 @gemini에게 최신 문서 검색을 요청해.\"\n  }],\n  \"stream\": false\n}",
+        "options": { "timeout": 600000 }
+      },
+      "id": "node-architect-escalation",
+      "name": "@architect 에스컬레이션",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1960, 500]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "✅ *MISRA Gate 2 해결 완료*\n\n담당: @misra-agent ({{ $json.attempt }}차 시도)\n\n처리 결과:\n{{ $json.content.substring(0, 600) }}",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "node-telegram-resolved",
+      "name": "Telegram 해결 알림",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1300, 200],
+      "credentials": { "telegramApi": { "id": "telegram-cred", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "🚨 *MISRA 에스컬레이션 — @architect 개입*\n\n@misra-agent 2회 모두 실패\n\n🏛️ *@architect 분석:*\n{{ $json.choices[0].message.content.substring(0, 700) }}\n\n📋 로그: `/tmp/nightly_build_*.log`",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "node-telegram-escalation",
+      "name": "Telegram 에스컬레이션 알림",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2180, 500],
+      "credentials": { "telegramApi": { "id": "telegram-cred", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"received\", \"workflow\": \"misra-escalation\" }"
+      },
+      "id": "node-webhook-response",
+      "name": "Webhook 응답",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [420, 500]
+    }
+  ],
+  "connections": {
+    "Webhook (nightly_build 호출)": {
+      "main": [
+        [
+          { "node": "MISRA 요청 준비",  "type": "main", "index": 0 },
+          { "node": "Webhook 응답",     "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "MISRA 요청 준비": {
+      "main": [[{ "node": "@misra-agent 1차 시도", "type": "main", "index": 0 }]]
+    },
+    "@misra-agent 1차 시도": {
+      "main": [[{ "node": "1차 결과 확인", "type": "main", "index": 0 }]]
+    },
+    "1차 결과 확인": {
+      "main": [[{ "node": "1차 해결?", "type": "main", "index": 0 }]]
+    },
+    "1차 해결?": {
+      "main": [
+        [{ "node": "Telegram 해결 알림",  "type": "main", "index": 0 }],
+        [{ "node": "@misra-agent 2차 시도", "type": "main", "index": 0 }]
+      ]
+    },
+    "@misra-agent 2차 시도": {
+      "main": [[{ "node": "2차 결과 확인", "type": "main", "index": 0 }]]
+    },
+    "2차 결과 확인": {
+      "main": [[{ "node": "2차 해결?", "type": "main", "index": 0 }]]
+    },
+    "2차 해결?": {
+      "main": [
+        [{ "node": "Telegram 해결 알림",    "type": "main", "index": 0 }],
+        [{ "node": "@architect 에스컬레이션", "type": "main", "index": 0 }]
+      ]
+    },
+    "@architect 에스컬레이션": {
+      "main": [[{ "node": "Telegram 에스컬레이션 알림", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "embedded-lab" }, { "name": "misra" }, { "name": "escalation" }]
+}

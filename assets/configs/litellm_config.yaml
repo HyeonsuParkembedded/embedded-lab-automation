@@ -1,0 +1,30 @@
+model_list:
+  # ── 배율 0× (무제한 호출 가능) ──────────────────────────────
+  - model_name: github_copilot/gpt-4.1
+    litellm_params:
+      model: github_copilot/gpt-4.1
+
+  - model_name: github_copilot/gpt-5-mini
+    litellm_params:
+      model: github_copilot/gpt-5-mini
+
+  # ── OpenAI Codex 계열 (배율 1×, responses 모드) ─────────────
+  - model_name: github_copilot/gpt-5.3-codex
+    model_info:
+      mode: responses
+    litellm_params:
+      model: github_copilot/gpt-5.3-codex
+
+  # ── Anthropic 계열 ──────────────────────────────────────────
+  - model_name: github_copilot/claude-sonnet-4-6
+    litellm_params:
+      model: github_copilot/claude-sonnet-4-6
+
+  - model_name: github_copilot/claude-opus-4-6
+    litellm_params:
+      model: github_copilot/claude-opus-4-6
+
+  # ── Google 계열 (Gemini CLI Bridge 용) ──────────────────────
+  - model_name: google_genai/gemini-3.0-pro
+    litellm_params:
+      model: gemini/gemini-3.0-pro

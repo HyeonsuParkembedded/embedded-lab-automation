@@ -1,0 +1,43 @@
+# Environment variables (Secrets)
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+/tmp/
+
+# Build artifacts
+firmware/build/
+__pycache__/
+*.pyc
+*.bin
+*.elf
+*.hex
+*.map
+
+# Renode simulation
+sim/logs/
+*.repl
+!sim/stm32f4_test.resc
+
+# Reports (Generated)
+reports/
+*.pdf
+*.docx
+*.pptx
+*.hwpx
+
+# Memory MCP
+.memory/
+
+# OS specific
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python venv
+venv/
+.venv/
+env/

@@ -1,0 +1,88 @@
+# ~/embedded-lab/mcp-servers.yaml
+
+# Gemini CLI MCP 서버 (Senior Consultant)
+gemini-mcp:
+  command: gemini-cli
+  args: ["mcp-server"]
+  env:
+    GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_API_KEY}
+
+# ESP-IDF 빌드 MCP
+esp-idf-mcp:
+  command: python3
+  args: ["/home/ubuntu/embedded-lab/mcp-servers/esp_idf_mcp.py"]
+  env:
+    IDF_PATH: ${IDF_PATH}
+
+# Telegram 알림 MCP
+telegram-mcp:
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-telegram"]
+  env:
+    TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+    TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+
+# GitHub 관리 MCP
+github-mcp:
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-github"]
+  env:
+    GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_TOKEN}
+
+# n8n 워크플로우 자동화 MCP
+# 복잡한 조건부 워크플로우, GitHub 웹훅 기반 트리거, 외부 서비스 연동 담당
+n8n-mcp:
+  command: npx
+  args: ["-y", "@n8n/mcp-server"]
+  env:
+    N8N_API_URL: ${N8N_API_URL}
+    N8N_API_KEY: ${N8N_API_KEY}
+
+# Context7 MCP — 라이브러리/프레임워크 최신 공식 문서 검색
+# ESP-IDF, Zephyr, cFS, FreeRTOS, AUTOSAR 등 문서를 실시간으로 가져옴
+context7-mcp:
+  command: npx
+  args: ["-y", "@upstash/context7-mcp"]
+
+# Hyperbrowser MCP — 고급 브라우저 자동화
+# 스크린샷, JS 실행, 복잡한 웹 인터랙션 (Gemini browser_use 대비 더 강력)
+hyperbrowser-mcp:
+  command: npx
+  args: ["-y", "@hyperbrowser/mcp"]
+  env:
+    HYPERBROWSER_API_KEY: ${HYPERBROWSER_API_KEY}
+
+# Brave Search MCP — 웹 검색 (데이터시트, Errata, 기술 포럼 검색)
+brave-search-mcp:
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-brave-search"]
+  env:
+    BRAVE_API_KEY: ${BRAVE_API_KEY}
+
+# Memory MCP — 에이전트 영구 기억 (지식 그래프 기반)
+# 반복 에러 패턴, 해결책, 아키텍처 결정 사항을 세션 간 기억
+memory-mcp:
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-memory"]
+  env:
+    MEMORY_FILE_PATH: ${MEMORY_FILE_PATH}
+
+# ARM MCP — ARM 개발 도구 및 문서 연동
+# Cortex-M 레퍼런스 매뉴얼, CMSIS, Keil MDK 연동
+arm-mcp:
+  command: npx
+  args: ["-y", "@arm-developer/mcp-server"]
+  env:
+    ARM_API_KEY: ${ARM_API_KEY}
+
+# HWPX MCP — 한글(HWP/HWPX) 문서 읽기·편집·생성
+# 보고서, 논문 요약, 주간 리뷰를 .hwpx 형식으로 출력 (국내 제출용)
+# API 키 불필요 — uvx 실행만으로 동작 (uv 설치 필요: curl -LsSf https://astral.sh/uv/install.sh | sh)
+hwpx-mcp:
+  command: uvx
+  args: ["hwpx-mcp-server"]
+  env:
+    HWPX_MCP_PAGING_PARA_LIMIT: "200"  # read_text 최대 단락 수 (기본 200)
+    HWPX_MCP_AUTOBACKUP: "1"           # 저장 시 .bak 자동 백업 (기본 0)
+    HWPX_MCP_HARDENING: "1"            # 3단계 편집 파이프라인 활성화 (plan→preview→apply)
+    LOG_LEVEL: "INFO"
