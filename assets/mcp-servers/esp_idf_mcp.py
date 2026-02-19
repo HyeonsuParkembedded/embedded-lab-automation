@@ -97,11 +97,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         # 타겟 설정 후 빌드
         set_target_out = run_idf_command(project_path, ["set-target", target])
         build_out = run_idf_command(project_path, ["build"])
-        return [TextContent(type="text", text=f"### Target Setting
-{set_target_out}
-
-### Build Output
-{build_out}")]
+        return [TextContent(type="text", text=f"### Target Setting\n{set_target_out}\n\n### Build Output\n{build_out}")]
 
     elif name == "flash":
         port = arguments.get("port")
