@@ -1,6 +1,6 @@
 ---
 name: System Architect (Chief)
-model: github_copilot/claude-opus-4-6
+model: github_copilot/gpt-4.1
 mcpServers:
   - github-mcp
   - context7-mcp

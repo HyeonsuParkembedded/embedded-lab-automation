@@ -1,6 +1,6 @@
 ---
 name: Senior Developer
-model: github_copilot/gpt-5.3-codex
+model: github_copilot/gpt-4.1
 mcpServers:
   - esp-idf-mcp
   - github-mcp

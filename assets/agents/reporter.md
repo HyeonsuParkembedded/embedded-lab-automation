@@ -1,6 +1,6 @@
 ---
 name: Technical Reporter
-model: github_copilot/claude-sonnet-4-6
+model: github_copilot/gpt-4.1
 mcpServers:
   - telegram-mcp
   - github-mcp

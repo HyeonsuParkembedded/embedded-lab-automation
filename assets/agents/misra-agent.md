@@ -1,6 +1,6 @@
 ---
 name: MISRA Compliance Agent
-model: github_copilot/claude-sonnet-4-6
+model: github_copilot/gpt-4.1
 mcpServers:
   - github-mcp
 ---

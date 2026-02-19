@@ -2,10 +2,8 @@
 
 # Gemini CLI MCP 서버 (Senior Consultant)
 gemini-mcp:
-  command: gemini-cli
+  command: gemini
   args: ["mcp-server"]
-  env:
-    GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_API_KEY}
 
 # ESP-IDF 빌드 MCP
 esp-idf-mcp:

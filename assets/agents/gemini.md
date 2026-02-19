@@ -1,8 +1,7 @@
 ---
 name: Gemini Specialist (Support)
-model: google_genai/gemini-3.0-pro
+model: github_copilot/gpt-4.1
 mcpServers:
-  - gemini-mcp
   - hyperbrowser-mcp
   - brave-search-mcp
 ---
